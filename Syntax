@@ -1,0 +1,281 @@
+#Hente inn Excel dokument med spørreskjema resultater, hente inn nødvendige pakker
+install.packages("readxl") 
+install.packages("dplyr") 
+install.packages("ggcorrplot") 
+library("dplyr") 
+library("readxl") 
+library("ggcorrplot")
+my_data <- read_excel("Data17mars.xlsx")
+
+
+#Recode verdier og organisere datasett og variabler
+
+#Recode lærernes hovedfag
+my_data[my_data$`3. Hva anser du som ditt hovedfag?`== 'Samfunnskunnskap', "Hovedfag"]<-'Samf' 
+my_data[my_data$`3. Hva anser du som ditt hovedfag?`== 'Samfunnsøkonomi', "Hovedfag"]<- 'Samf' 
+my_data[my_data$`3. Hva anser du som ditt hovedfag?`== 'Sosialantropologi', "Hovedfag"]<- 'Samf' 
+my_data[my_data$`3. Hva anser du som ditt hovedfag?`== 'Sosiologi', "Hovedfag"]<- 'Samf' 
+my_data[my_data$`3. Hva anser du som ditt hovedfag?`== 'Statsvitenskap', "Hovedfag"]<- 'Samf' 
+my_data[my_data$`3. Hva anser du som ditt hovedfag?`== 'Historie', "Hovedfag"]<- 'Hist' 
+my_data[my_data$`3. Hva anser du som ditt hovedfag?`== 'Geografi', "Hovedfag"]<- 'Geog' 
+my_data[my_data$`3. Hva anser du som ditt hovedfag?`== 'Utviklingsstudier', "Hovedfag"]<- 'Samf' 
+my_data[my_data$`3. Hva anser du som ditt hovedfag?`== 'Annet', "Hovedfag"]<- 'Annet'
+
+#Dummy code fag2, 1=Geografi 0=Ikke geografi
+my_data$fag2 <- ifelse(my_data$`4. Hvilke andre fag tok du gjennom din utdanning?_6` == 'Geografi', 1, 0)
+my_data$fag2[is.na(my_data$fag2)] <- 0
+table(my_data$fag2)
+
+
+#Rename status spørsmål til lettere håndterbare navn
+my_data <- my_data %>%
+  rename("StatusGeog" = "10.2 Hvordan vurderer du den nåværende statusen for fagdisiplinen GEOGRAFI i samfunnsfaget?",
+         "StatusSamf" = "10.1 Hvordan vurderer du den nåværende statusen for fagdisiplinen SAMFUNNSKUNNSKAP i samfunnsfaget?",
+         "StatusHist" = "10.3 Hvordan vurderer du den nåværende statusen for fagdisiplinen HISTORIE i samfunnsfaget?"
+         )
+my_data <- my_data %>%
+  rename("LK20StatusGeog" = "7.2 Hvordan mener du Kunnskapsløftet 2020 har påvirket statusen til fagdisiplinen GEOGRAFI i samfunnsfaget?",
+         "LK20StatusSamf" = "7.1 Hvordan mener du Kunnskapsløftet 2020 har påvirket statusen til fagdisiplinen SAMFUNNSKUNNSKAP i samfunnsfaget?",
+         "LK20StatusHist" = "7.3 Hvordan mener du Kunnskapsløftet 2020 har påvirket statusen til fagdisiplinen HISTORIE i samfunnsfaget?"
+         )
+my_data <- my_data %>%
+  rename("LK20Auto" = "8. Synes du den nye lærerplanen gir deg som samfunnsfagslærer større eller mindre autonomi sammenlignet med forrige læreplan?",
+         "LK20Frih" = "9. Synes du at den nye lærerplanen gir deg større eller mindre frihet til å velge hvordan du vektlegger de tre fagdisiplinene i samfunnsfaget?"
+         )
+
+my_data <- my_data %>%
+  rename("Alder" = "Hva er din alder?"
+         )
+
+
+#Recode Lickert skala status spørsmål til tallverdier VET IKKE = 3
+my_data2 <- my_data %>% mutate_at(c("LK20StatusGeog", "LK20StatusSamf", "LK20StatusHist"), 
+                                  funs(recode(., "Svært svekket" =1, "Svekket" =2, "Ingen endring" =3, "Styrket" =4, "Svært styrket" =5, "Vet ikke" =NULL)))
+table(my_data2$LK20StatusSamf)
+summary(my_data2$LK20StatusSamf)
+
+my_data3 <- my_data2 %>% mutate_at(c("LK20Auto"),
+                                   funs(recode(., "Mye mindre" =1, "Mindre" =2, "Lite endring" =3, "Større" =4, "Mye større" =5, "Vet ikke" =NULL)))
+
+#Noter at her mangler nøytral verdi, vet ikke blir nøytral
+my_data4 <- my_data3 %>% mutate_at(c("LK20Frih"),
+                                   funs(recode(., "Mye mindre frihet" =1, "Noe mindre" =2, "Vet ikke" =3, "Noe større" =4, "Mye større frihet" =5)))
+table(my_data4$LK20Frih)
+table(my_data4$LK20Auto)
+
+#Recode kjønn Dummy variabel, 1=Kvinne 0=Mann
+my_data4[my_data4$`Hva er ditt kjønn?` == "Kvinne", "Kjønn"]<- 1
+my_data4[my_data4$`Hva er ditt kjønn?` == "Mann", "Kjønn"]<- 0
+
+#Recode characters to numeric
+my_data5 <- my_data4 %>% mutate_at(c("StatusGeog", "StatusSamf", "StatusHist"),
+                                   funs(recode(., "1" =1, "2" =2, "3" =3, "4" =4, "5" =5)))
+
+my_data5$Alder <- as.numeric(my_data5$Alder)
+
+#sjekke klasse
+class(my_data5$Alder)
+
+#DUMMY KODE HIST, SAMF ELLER GEOG UTDANNING
+my_data5$HistUt <- ifelse(my_data5$Hovedfag == "Hist", 1, 0)
+my_data5$SamfUt <- ifelse(my_data5$Hovedfag == "Samf", 1, 0)
+my_data5$GeogUt <- ifelse(my_data5$Hovedfag == "Geog", 1, 0)
+
+#dummy kode NA i fag 2 (Alle som har samfunnsfaglige fag som fag2)
+my_data5$SamfUt2 <- ifelse(is.na(my_data5$`4. Hvilke andre fag tok du gjennom din utdanning?_1`), 0, my_data5$`4. Hvilke andre fag tok du gjennom din utdanning?_1`)
+my_data5$NySamfUt2 <- ifelse(!is.na(my_data5$`4. Hvilke andre fag tok du gjennom din utdanning?_2`) & is.character(my_data5$`4. Hvilke andre fag tok du gjennom din utdanning?_2`), 1, 0)
+my_data5$NySamfUt2 <- my_data5$NySamfUt2 + ifelse(!is.na(my_data5$`4. Hvilke andre fag tok du gjennom din utdanning?_3`) & is.character(my_data5$`4. Hvilke andre fag tok du gjennom din utdanning?_3`), 1, 0)
+my_data5$NySamfUt2 <- my_data5$NySamfUt2 + ifelse(!is.na(my_data5$`4. Hvilke andre fag tok du gjennom din utdanning?_4`) & is.character(my_data5$`4. Hvilke andre fag tok du gjennom din utdanning?_4`), 1, 0)
+my_data5$NySamfUt2 <- my_data5$NySamfUt2 + ifelse(!is.na(my_data5$`4. Hvilke andre fag tok du gjennom din utdanning?_5`) & is.character(my_data5$`4. Hvilke andre fag tok du gjennom din utdanning?_5`), 1, 0)
+my_data5$NySamfUt2 <- my_data5$NySamfUt2 + ifelse(!is.na(my_data5$`4. Hvilke andre fag tok du gjennom din utdanning?_1`) & is.character(my_data5$`4. Hvilke andre fag tok du gjennom din utdanning?_1`), 1, 0)
+my_data5$NySamfUt2 <- ifelse(my_data5$NySamfUt2 != 0, 1, 0)
+
+my_data5$HistUt2 <- ifelse(is.na(my_data5$`4. Hvilke andre fag tok du gjennom din utdanning?_8`), 0,
+                           ifelse(my_data5$`4. Hvilke andre fag tok du gjennom din utdanning?_8` == "Historie", 1, 0))
+
+#HistUt2 = Historie fag 2 | fag2 = geografi fag 2 | NySamfUt2 = Samfunnnsfag fag 2
+
+#Kombinere fag to med hovedfag for totalt med gitt utdanning
+my_data5$TotGeog <- ifelse(my_data5$GeogUt ==1 | my_data5$fag2 ==1, 1, 0)
+my_data5$TotSamf <- ifelse(my_data5$NySamfUt2 ==1 | my_data5$SamfUt ==1, 1, 0)
+my_data5$TotHist <- ifelse(my_data5$HistUt ==1 | my_data5$HistUt2 ==1, 1, 0)
+
+
+#doublecheck table
+table(my_data5$UnKval)
+summary(my_data5$UnKval)
+sd(my_data5$LK20Frih, na.rm=TRUE)
+
+#Code en ren Annet variabel
+my_data5$Annet <- ifelse(my_data5$TotGeog == 0 & my_data5$TotSamf == 0 & my_data5$TotHist == 0, 1, 0)
+
+#Recode spm 11, underkvalifisert. 1=JA 0=NEI
+my_data5$UnKval <- ifelse(my_data$`11. Føler du din utdanningsbakgrunn gir deg tilstrekkelig kunnskap til å undervise i alle fagdisiplinene i samfunnsfaget?` == "Ja", 1, 0)
+
+#Recode verdi for år arbeid i skolen
+my_data5[my_data5$`5. Hvor lenge har du jobbet som lærer?`== 'Under 1 år', "ArbLen"]<-'1'
+my_data5[my_data5$`5. Hvor lenge har du jobbet som lærer?`== '1-3 år', "ArbLen"]<-'2'
+my_data5[my_data5$`5. Hvor lenge har du jobbet som lærer?`== '4-6 år', "ArbLen"]<-'3'
+my_data5[my_data5$`5. Hvor lenge har du jobbet som lærer?`== '7-10 år', "ArbLen"]<-'4'
+my_data5[my_data5$`5. Hvor lenge har du jobbet som lærer?`== '11-15 år', "ArbLen"]<-'5'
+my_data5[my_data5$`5. Hvor lenge har du jobbet som lærer?`== 'Over 15 år', "ArbLen"]<-'6'
+my_data5$ArbLen <- as.numeric(my_data5$ArbLen)
+
+#Recode verdi for kommunestørrelse
+my_data5[my_data5$`Hvor stor er kommunen der du har ditt arbeidssted?`== 'Under 5000', "Kommune"]<-'1'
+my_data5[my_data5$`Hvor stor er kommunen der du har ditt arbeidssted?`== '5000 - 10 000', "Kommune"]<-'2'
+my_data5[my_data5$`Hvor stor er kommunen der du har ditt arbeidssted?`== 'Over 10 000', "Kommune"]<-'3'
+my_data5$Kommune <- as.numeric(my_data5$Kommune)
+
+
+#Variabler bruk:
+#Hovedfag:                        GeogUt          | SamfUt          | HistUt
+#Fag2:                            fag2            | NySamfUt2       | HistUt2
+#Totalt:                          TotGeog         | TotSamf         | TotHist
+#Ingen relevant utdanning:        Annet
+#StatusNå:                        StatusGeog      | StatusSamf      | StatusHist
+#LK20 påvirkning av status:       LK20StatusGeog  | LK20StatusSamf  | LK20StatusHist FIKSE NA VERDIER?
+#LK20 Lærernes Autonomi:          LK20Auto
+#LK20 Lærernes Frihet:            LK20Frih
+#Underkvalifisert i en disiplin:  UnKval
+#Lengde arbeid i skolen:          ArbLen
+
+
+
+#Korelasjonsplot - SKROTA, Pearsons ikke relevant!
+my_data5%>%
+  dplyr::select(StatusGeog,TotHist,TotSamf,TotGeog, UnKval)%>%
+  cor(.) %>%
+  ggcorrplot(.,type="lower",lab=TRUE)
+
+
+
+#Regresjonsanalyse basert på model fra veiledning
+#Modell 3
+GeoStatus1 <- lm(StatusGeog ~ TotHist + TotSamf + Annet, data=my_data5)
+summary(GeoStatus1)
+
+#Modell 4
+GeoStatus2 <- lm(StatusGeog ~ TotHist + TotSamf + Annet + Kjønn + Alder, data=my_data5)
+summary(GeoStatus2)
+
+#Modell 5
+GeoStatus3 <- lm(StatusGeog ~ TotHist + TotSamf + Annet + Kjønn + Alder + ArbLen + Kommune, data=my_data5)
+summary(GeoStatus3)
+
+#Modell 6?
+#Samspill mellom ingen utdanning og arbeidslengde
+GeoStatus7 <- lm(StatusGeog ~ TotHist + TotSamf + Annet + Annet * ArbLen + Kjønn + Alder + ArbLen + Kommune, data=my_data5)
+summary(GeoStatus7)
+
+
+#Alternativ modell
+#Kan geografiens status forklares av Lk20's påvirkning av statusen og samf+hist sin status?
+GeoStatus4 <- lm(StatusGeog ~ LK20Auto + StatusHist + StatusSamf, data=my_data5)
+summary(GeoStatus4)
+
+GeoStatus8 <- lm(StatusGeog ~ LK20Auto +StatusSamf + StatusHist + Kjønn + Alder + ArbLen + Kommune, data=my_data5)
+summary(GeoStatus8)
+
+#KOPI - ubrukt
+GeoStatus8 <- lm(StatusGeog ~ LK20StatusGeog + LK20Auto +StatusSamf + StatusHist + Kjønn + Alder + ArbLen + Kommune, data=my_data5)
+summary(GeoStatus8)
+
+#Innledende modeller + modell 3?
+
+#MODELL 1
+GeoStatus5 <- lm(StatusGeog ~ GeogUt, data=my_data5)
+summary(GeoStatus5)
+
+#MODELL 2
+GeoStatus6 <- lm(StatusGeog ~ TotGeog, data=my_data5)
+summary(GeoStatus6)
+
+
+
+#--------------------------------------
+
+my_data5$Samfunnskunnskap...29 <- as.numeric(my_data5$Samfunnskunnskap...29)
+summary(my_data5$Samfunnskunnskap...29)
+my_data5$Geografi...30 <- as.numeric(my_data5$Geografi...30)
+summary(my_data5$Geografi...30)
+my_data5$Historie...31 <- as.numeric(my_data5$Historie...31)
+summary(my_data5$Historie...31)
+
+
+
+#Lage frekvensdiagram underkvalifiserte fag
+library(ggplot2)
+
+ukva <- data.frame(Fag = c("Geografi", "Historie", "Samfunnskunnskap"),
+                   Antall_elever = c(57, 18, 16))
+
+ggplot(data = ukva, aes(x = Fag, y = Antall_elever, fill = Fag)) +
+  geom_bar(stat = "identity") +
+  xlab("Fag") +
+  ylab("Antall lærere") +
+  scale_fill_manual(values = c("forestgreen", "mediumblue", "firebrick"))
+
+#Kommune status geog chart
+meansage <- aggregate(StatusGeog ~ Alder, my_data5, mean)
+barplot(meansage$StatusGeog, names.arg = meansage$Alder, xlab = "Alder", ylab = "Mean StatusGeog")
+
+meanskom <- aggregate(StatusGeog ~ Kommune, my_data5, mean)
+barplot(meanskom$StatusGeog, names.arg = meanskom$Alder, xlab = "Kommune størrelse", ylab = "Mean StatusGeog")
+
+meansarb <- aggregate(StatusGeog ~ ArbLen, my_data5, mean)
+barplot(meansarb$StatusGeog, names.arg = meansarb$Alder, xlab = "Arbeidslengde", ylab = "Mean StatusGeog")
+
+#Barchart hovedfags forhold til geografiens status
+colors <- c("gray", "forestgreen", "mediumblue", "firebrick")
+meansfag <- aggregate(StatusGeog ~ Hovedfag, my_data5, mean)
+barplot(meansfag$StatusGeog, names.arg = meansfag$Hovedfag, col = colors, xlab = "Hovedfag", ylab = "Gjennomsnittlig vurdering av statusen geografi")
+
+#Forsøk på underkvalifisert vs utdanningsbakgrunn
+ukvafag <- aggregate(UnKval ~ Hovedfag, my_data5, mean)
+barplot(ukvafag$UnKval, names.arg = ukvafag$Hovedfag, col = colors, xlab = "Hovedfag", ylab = "Gjennomsnitt underkvalifiserte lærere basert på fagdisiplin")
+
+#barplot av tidligere ggplot
+barplot(ukva$Antall_elever, names.arg = ukva$Fag, col = colors2, xlab = "Fag", ylab = "Antall lærere")
+
+#Piechart underkvalifiserte fag
+colors2 <- c("forestgreen", "mediumblue", "firebrick")
+sums <- aggregate(Antall_elever ~ Fag, ukva, sum)
+pie(sums$Antall_elever, labels = sums$Fag, col = colors2)
+legend("right", legend = sums$Antall_elever, fill = colors2, cex = 0.8, text.font = 2)
+
+#Barchart av lærernes utdanning
+utdannede <- data.frame(Fag = c("Geografi", "Historie", "Samfunnskunnskap"),
+                        Antall_lærere = c(36, 106, 120))
+barplot(utdannede$Antall_lærere, names.arg = utdannede$Fag, col = colors2, xlab = "Fag", ylab = "Antall lærere")
+
+
+#CramerV
+library(vcd)
+
+Cram <- matrix(NA, nrow = 5, ncol = 5)
+colnames(Cram) <- c("TotGeog", "TotSamf", "TotHist", "StatusGeog", "UnKval")
+rownames(Cram) <- c("TotGeog", "TotSamf", "TotHist", "StatusGeog", "UnKval")
+
+Cram1 <- table(my_data5$TotGeog, my_data5$TotSamf)
+assocstats(Cram1)
+Cram2 <- table(my_data5$TotGeog, my_data5$TotHist)
+assocstats(Cram2)
+Cram3 <- table(my_data5$TotGeog, my_data5$UnKval)
+assocstats(Cram3)
+Cram4 <- table(my_data5$TotGeog, my_data5$StatusGeog)
+assocstats(Cram4)
+Cram5 <- table(my_data5$TotSamf, my_data5$TotHist)
+assocstats(Cram5)
+Cram6 <- table(my_data5$TotSamf, my_data5$UnKval)
+assocstats(Cram6)
+Cram7 <- table(my_data5$TotSamf, my_data5$StatusGeog)
+assocstats(Cram7)
+Cram8 <- table(my_data5$TotHist, my_data5$UnKval)
+assocstats(Cram8)
+Cram9 <- table(my_data5$TotHist, my_data5$StatusGeog)
+assocstats(Cram9)
+Cram10 <- table(my_data5$UnKval, my_data5$StatusGeog)
+assocstats(Cram10)
+
+
